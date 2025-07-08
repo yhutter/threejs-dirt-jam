@@ -1,4 +1,5 @@
 import * as THREE from "three"
+import { Pane } from "tweakpane"
 
 const canvas = document.getElementById("experience")
 let sizes = {
@@ -8,7 +9,7 @@ let sizes = {
 
 const renderer = new THREE.WebGLRenderer({
     canvas: canvas,
-    antialias: true
+    antialias: true,
 })
 renderer.setSize(sizes.width, sizes.height)
 renderer.setPixelRatio(Math.min(2, window.devicePixelRatio))
@@ -24,6 +25,17 @@ const box = new THREE.Mesh(
 )
 box.position.z = -3
 scene.add(box)
+
+const debugObj = {
+    backgroundColor: new THREE.Color(0x282828)
+}
+renderer.setClearColor(debugObj.backgroundColor)
+
+const pane = new Pane()
+const folder = pane.addFolder({ title: "Dirt Jam", expanded: true })
+folder.addBinding(debugObj, "backgroundColor", { label: "Background Color", view: "color", color: { type: "float" } }).on("change", event => {
+    renderer.setClearColor(event.value)
+})
 
 const resize = () => {
     sizes.width = window.innerWidth

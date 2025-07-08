@@ -11,6 +11,7 @@
   "description": "",
   "dependencies": {
     "three": "^0.178.0",
+    "tweakpane": "^4.0.5",
     "vite": "^7.0.3"
   }
 }

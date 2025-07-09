@@ -1,6 +1,8 @@
 import * as THREE from "three"
 import { WebGPURenderer } from "three/webgpu"
 import { Pane } from "tweakpane"
+import { OrbitControls } from "three/examples/jsm/controls/OrbitControls"
+
 
 class App {
 
@@ -11,13 +13,15 @@ class App {
     #renderer = null
     #scene = null
     #camera = null
-    #box = null
+    #landscape = null
     #debugParams = {
-        backgroundColor: new THREE.Color(0x282828)
+        backgroundColor: new THREE.Color(0x282828),
+        wireframe: true
     }
     #pane = null
     #debugFolder = null
     #clock = null
+    #controls = null
 
     constructor(id) {
         const canvas = document.getElementById(id)
@@ -29,23 +33,31 @@ class App {
             canvas: canvas,
             antialias: true,
         })
+        this.#renderer = new WebGPURenderer({
+            canvas: canvas,
+            antialias: true,
+        })
         this.#renderer.setSize(this.#sizes.width, this.#sizes.height)
         this.#renderer.setPixelRatio(Math.min(2, window.devicePixelRatio))
         this.#scene = new THREE.Scene()
 
-        this.#camera = new THREE.PerspectiveCamera(75, this.#sizes.width / this.#sizes.height, 0.01, 1000)
-        this.#box = new THREE.Mesh(
-            new THREE.BoxGeometry(1, 1, 1),
-            new THREE.MeshNormalMaterial()
+        this.#camera = new THREE.PerspectiveCamera(75, this.#sizes.width / this.#sizes.height, 0.001, 1000)
+        this.#landscape = new THREE.Mesh(
+            new THREE.PlaneGeometry(4, 4, 16, 16),
+            new THREE.MeshBasicMaterial({ color: 0xffffff, wireframe: this.#debugParams.wireframe })
         )
-        this.#box.position.z = -3
-        this.#scene.add(this.#box)
+        this.#landscape.rotation.x = -Math.PI * 0.5
+        this.#camera.position.set(0, 4, 0)
+        this.#camera.lookAt(this.#landscape)
+
+        this.#scene.add(this.#landscape)
         this.#renderer.setClearColor(this.#debugParams.backgroundColor)
+
         this.#pane = new Pane()
         this.#debugFolder = this.#pane.addFolder({ title: "Dirt Jam", expanded: true })
-        this.#debugFolder.addBinding(this.#debugParams, "backgroundColor", { label: "Background Color", view: "color", color: { type: "float" } }).on("change", event => {
-            this.#renderer.setClearColor(event.value)
-        })
+
+        this.#controls = new OrbitControls(this.#camera, this.#renderer.domElement)
+        this.#controls.enableDamping = true
 
         this.#clock = new THREE.Clock()
 
@@ -54,6 +66,14 @@ class App {
 
     async #setup() {
         await this.#renderer.init()
+
+        // Add debug params to Tweakpane
+        this.#debugFolder.addBinding(this.#debugParams, "backgroundColor", { label: "Background Color", view: "color", color: { type: "float" } }).on("change", event => {
+            this.#renderer.setClearColor(event.value)
+        })
+        this.#debugFolder.addBinding(this.#debugParams, "wireframe", { label: "Wireframe" }).on("change", event => {
+            this.#landscape.material.wireframe = event.value
+        })
     }
 
     #resize() {
@@ -66,9 +86,11 @@ class App {
     }
 
     #tick() {
+        this.#controls.update()
+
         const deltaTime = this.#clock.getDelta() * 1000
         const elapsedTime = this.#clock.getElapsedTime()
-        this.#box.rotation.y = elapsedTime
+
         this.#renderer.render(this.#scene, this.#camera)
         window.requestAnimationFrame(() => this.#tick())
     }

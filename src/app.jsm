@@ -2,6 +2,7 @@ import * as THREE from "three"
 import { WebGPURenderer } from "three/webgpu"
 import { Pane } from "tweakpane"
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls"
+import Stats from "stats-gl"
 
 
 class App {
@@ -22,6 +23,7 @@ class App {
     #debugFolder = null
     #clock = null
     #controls = null
+    #stats = null
 
     constructor(id) {
         const canvas = document.getElementById(id)
@@ -59,6 +61,9 @@ class App {
         this.#controls = new OrbitControls(this.#camera, this.#renderer.domElement)
         this.#controls.enableDamping = true
 
+        this.#stats = new Stats()
+        document.body.appendChild(this.#stats.dom)
+
         this.#clock = new THREE.Clock()
 
         window.addEventListener("resize", () => this.#resize())
@@ -85,13 +90,17 @@ class App {
         this.#camera.updateProjectionMatrix()
     }
 
-    #tick() {
+    #update(deltaTime) {
+        this.#stats.begin()
         this.#controls.update()
-
-        const deltaTime = this.#clock.getDelta() * 1000
-        const elapsedTime = this.#clock.getElapsedTime()
-
         this.#renderer.render(this.#scene, this.#camera)
+        this.#stats.end()
+        this.#stats.update()
+    }
+
+    #tick() {
+        const deltaTime = this.#clock.getDelta() * 1000
+        this.#update(deltaTime)
         window.requestAnimationFrame(() => this.#tick())
     }
 

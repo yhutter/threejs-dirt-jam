@@ -1,4 +1,5 @@
 import * as THREE from "three"
+import { WebGPURenderer } from "three/webgpu"
 import { Pane } from "tweakpane"
 
 class App {
@@ -20,9 +21,11 @@ class App {
 
     constructor(id) {
         const canvas = document.getElementById(id)
+
         this.#sizes.width = window.innerWidth
         this.#sizes.height = window.innerHeight
-        this.#renderer = new THREE.WebGLRenderer({
+
+        this.#renderer = new WebGPURenderer({
             canvas: canvas,
             antialias: true,
         })
@@ -46,7 +49,11 @@ class App {
 
         this.#clock = new THREE.Clock()
 
-        window.addEventListener("resize", this.#resize)
+        window.addEventListener("resize", () => this.#resize())
+    }
+
+    async #setup() {
+        await this.#renderer.init()
     }
 
     #resize() {
@@ -66,7 +73,8 @@ class App {
         window.requestAnimationFrame(() => this.#tick())
     }
 
-    run() {
+    async run() {
+        await this.#setup()
         this.#tick()
     }
 }

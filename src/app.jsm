@@ -1,9 +1,9 @@
-import * as THREE from "three"
-import { WebGPURenderer } from "three/webgpu"
+import * as THREE from "three/webgpu"
+import { noise } from "./shader-utils.jsm"
 import { Pane } from "tweakpane"
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls"
 import Stats from "stats-gl"
-
+import { time, vec3, positionLocal, uniform } from "three/tsl"
 
 class App {
 
@@ -15,8 +15,10 @@ class App {
     #scene = null
     #camera = null
     #landscape = null
+    #uLandscapeColor = null
     #debugParams = {
-        backgroundColor: new THREE.Color(0x282828),
+        backgroundColor: new THREE.Color(0x191D24),
+        landscapeColor: new THREE.Color(0xE6CC93),
         wireframe: true
     }
     #pane = null
@@ -31,11 +33,7 @@ class App {
         this.#sizes.width = window.innerWidth
         this.#sizes.height = window.innerHeight
 
-        this.#renderer = new WebGPURenderer({
-            canvas: canvas,
-            antialias: true,
-        })
-        this.#renderer = new WebGPURenderer({
+        this.#renderer = new THREE.WebGPURenderer({
             canvas: canvas,
             antialias: true,
         })
@@ -44,12 +42,27 @@ class App {
         this.#scene = new THREE.Scene()
 
         this.#camera = new THREE.PerspectiveCamera(75, this.#sizes.width / this.#sizes.height, 0.001, 1000)
+        this.#camera.position.set(0, 1, 1.5)
+
+        this.#uLandscapeColor = uniform(new THREE.Color(0xE6CC93))
+
+        const noiseSeed = positionLocal.xyz.add(time.mul(0.4))
+        const noiseValue = noise(noiseSeed)
+        const displacement = noiseValue.mul(0.6)
+        // Because we are working in local space we need to displace on the z axis (which is esentially the y axis after being rotated)
+        const displacedPosition = vec3(positionLocal.x, positionLocal.y, positionLocal.z.add(displacement))
+
         this.#landscape = new THREE.Mesh(
-            new THREE.PlaneGeometry(4, 4, 16, 16),
-            new THREE.MeshBasicMaterial({ color: 0xffffff, wireframe: this.#debugParams.wireframe })
+            new THREE.PlaneGeometry(2, 2, 32, 32),
+            new THREE.MeshBasicNodeMaterial({
+                wireframe: this.#debugParams.wireframe,
+                positionNode: displacedPosition,
+                colorNode: this.#uLandscapeColor,
+            })
         )
+
+
         this.#landscape.rotation.x = -Math.PI * 0.5
-        this.#camera.position.set(0, 4, 0)
         this.#camera.lookAt(this.#landscape)
 
         this.#scene.add(this.#landscape)
@@ -78,6 +91,9 @@ class App {
         })
         this.#debugFolder.addBinding(this.#debugParams, "wireframe", { label: "Wireframe" }).on("change", event => {
             this.#landscape.material.wireframe = event.value
+        })
+        this.#debugFolder.addBinding(this.#debugParams, "landscapeColor", { label: "Landscape Color", view: "color", color: { type: "float" } }).on("change", event => {
+            this.#uLandscapeColor.value.set(event.value)
         })
     }
 

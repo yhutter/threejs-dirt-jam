@@ -3,7 +3,7 @@ import { noise, fbm } from "./shader-utils.jsm"
 import { Pane } from "tweakpane"
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls"
 import Stats from "stats-gl"
-import { time, vec3, positionLocal, uniform, Fn, select, float, int } from "three/tsl"
+import { time, vec3, vec4, uniform, select, modelWorldMatrix, positionGeometry, cameraViewMatrix, cameraProjectionMatrix, varying } from "three/tsl"
 
 class App {
 
@@ -12,7 +12,6 @@ class App {
 
         this.debugParams = {
             backgroundColor: new THREE.Color(0x222222),
-            showHelpers: true,
             landscape: {
                 color: new THREE.Color(0x7A8251),
                 seed: 2,
@@ -36,7 +35,6 @@ class App {
         })
         this.renderer.setSize(this.sizes.width, this.sizes.height)
         this.renderer.setPixelRatio(Math.min(2, window.devicePixelRatio))
-        this.renderer.shadowMap.enabled = true
         this.scene = new THREE.Scene()
 
         this.camera = new THREE.PerspectiveCamera(75, this.sizes.width / this.sizes.height, 0.001, 1000)
@@ -51,58 +49,30 @@ class App {
         this.uLandscapeNumOctaves = uniform(this.debugParams.landscape.numOctaves)
         this.uLandscapeAnimate = uniform(this.debugParams.landscape.animate ? 1 : 0)
 
-        // TSL Position Node
-        const positionNode = Fn(() => {
-            const animatedSeed = positionLocal.xyz.add(time.mul(0.2).add(vec3(this.uLandscapeSeed)))
-            const fixedSeed = positionLocal.xyz.add(vec3(this.uLandscapeSeed))
-            let noiseSeed = select(this.uLandscapeAnimate.equal(1), animatedSeed, fixedSeed).toVar()
-            noiseSeed.mulAssign(this.uLandscapeNoiseFrequencyFactor)
-            const noiseValue = fbm(vec3(noiseSeed), this.uLandscapeHurstExponent, this.uLandscapeNumOctaves)
-            const displacement = noiseValue.mul(this.uLandscapeNoiseScaleFactor)
-            // Because we are working in local space we need to displace on the z axis (which is esentially the y axis after being rotated)
-            const displacedPosition = vec3(positionLocal.x, positionLocal.y, positionLocal.z.add(displacement))
-            return displacedPosition
+        // TSL Shader Code
+        const modelPosition = modelWorldMatrix.mul(vec4(positionGeometry, 1.0))
 
-        })
+        const fixedSeed = modelPosition.xyz.add(vec3(this.uLandscapeSeed))
+        const animatedSeed = fixedSeed.add(time.mul(0.2))
+        const noiseSeed = select(this.uLandscapeAnimate.equal(1), animatedSeed, fixedSeed)
+        const noiseValue = fbm(vec3(noiseSeed).mul(this.uLandscapeNoiseFrequencyFactor), this.uLandscapeHurstExponent, this.uLandscapeNumOctaves)
 
-        // Lights
-        this.light = new THREE.DirectionalLight(0xffffff, 1)
-        this.light.castShadow = true
-        const shadowCameraSize = 1
-        this.light.shadow.mapSize.setScalar(1024)
-        this.light.shadow.camera.top = shadowCameraSize
-        this.light.shadow.camera.bottom = -shadowCameraSize
-        this.light.shadow.camera.left = -shadowCameraSize
-        this.light.shadow.camera.right = shadowCameraSize
-        this.light.shadow.camera.near = 0.1
-        this.light.shadow.camera.far = 2.5
-        this.light.position.set(-1, 1, 0)
-        this.scene.add(this.light)
-
-        this.helpers = []
-
-        const lightHelper = new THREE.DirectionalLightHelper(this.light)
-        this.scene.add(lightHelper)
-
-        const shadowHelper = new THREE.CameraHelper(this.light.shadow.camera)
-        this.scene.add(shadowHelper)
-
-        this.helpers.push(lightHelper, shadowHelper)
-
-        this.helpers.forEach(h => h.visible = this.debugParams.showHelpers)
+        const displacement = noiseValue.mul(this.uLandscapeNoiseScaleFactor)
+        const displacedPosition = vec4(modelPosition.x, modelPosition.y.add(displacement), modelPosition.z, modelPosition.w)
+        const viewPosition = cameraViewMatrix.mul(displacedPosition)
+        const projectedPosition = cameraProjectionMatrix.mul(viewPosition)
+        const finalColor = this.uLandscapeColor
 
         const resolution = 128
         this.landscape = new THREE.Mesh(
             new THREE.PlaneGeometry(2, 2, resolution, resolution),
-            new THREE.MeshStandardNodeMaterial({
+            new THREE.MeshBasicNodeMaterial({
                 wireframe: this.debugParams.landscape.wireframe,
-                positionNode: positionNode(),
-                colorNode: this.uLandscapeColor,
+                vertexNode: projectedPosition,
+                fragmentNode: finalColor
             })
         )
 
-        this.landscape.castShadow = true
-        this.landscape.receiveShadow = true
         this.landscape.rotation.x = -Math.PI * 0.5
         this.camera.lookAt(this.landscape)
 
@@ -129,9 +99,6 @@ class App {
 
         this.debugFolder.addBinding(this.debugParams, "backgroundColor", { label: "Background Color", view: "color", color: { type: "float" } }).on("change", event => {
             this.renderer.setClearColor(event.value)
-        })
-        this.debugFolder.addBinding(this.debugParams, "showHelpers", { label: "Show Helpers" }).on("change", event => {
-            this.helpers.forEach(h => h.visible = event.value)
         })
 
         this.landscapeFolder.addBinding(this.debugParams.landscape, "wireframe", { label: "Wireframe" }).on("change", event => {

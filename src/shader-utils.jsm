@@ -39,7 +39,7 @@ const fbm = /*@__PURE__*/ Fn(([x, H, numOctaves]) => {
 }, { x: 'vec3', H: 'float', numOctaves: 'int', return: 'float' });
 
 // Taken from https://thebookofshaders.com/13/
-const turbulenceFbm = /*@__PURE__*/ Fn(([x, H, numOctaves]) => {
+const turbulence = /*@__PURE__*/ Fn(([x, H, numOctaves]) => {
     const G = exp2(H.negate());
     const f = float(1.0).toVar();
     const a = float(1.0).toVar();
@@ -57,4 +57,4 @@ const turbulenceFbm = /*@__PURE__*/ Fn(([x, H, numOctaves]) => {
 
 
 
-export { noise, fbm, turbulenceFbm }
+export { noise, fbm, turbulence }

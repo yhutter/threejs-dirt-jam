@@ -1,7 +1,7 @@
 "use strict"
 
 import * as THREE from "three/webgpu"
-import { noise, fbm, turbulenceFbm } from "./shader-utils.jsm"
+import { noise, fbm, turbulence } from "./shader-utils.jsm"
 import { Pane } from "tweakpane"
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls"
 import Stats from "stats-gl"
@@ -64,7 +64,7 @@ class App {
         const fixedSeed = modelPosition.xyz.add(vec3(this.uLandscapeSeed))
         const animatedSeed = fixedSeed.add(time.mul(0.2))
         const noiseSeed = select(this.uLandscapeAnimate.equal(1), animatedSeed, fixedSeed)
-        const noiseValue = turbulenceFbm(vec3(noiseSeed).mul(this.uLandscapeNoiseFrequencyFactor), this.uLandscapeHurstExponent, this.uLandscapeNumOctaves)
+        const noiseValue = turbulence(vec3(noiseSeed).mul(this.uLandscapeNoiseFrequencyFactor), this.uLandscapeHurstExponent, this.uLandscapeNumOctaves)
 
         const displacement = noiseValue.mul(this.uLandscapeNoiseScaleFactor)
         const displacedPosition = vec4(modelPosition.x, modelPosition.y.add(displacement), modelPosition.z, modelPosition.w)

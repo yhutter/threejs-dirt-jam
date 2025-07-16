@@ -1,7 +1,7 @@
 "use strict"
 
 import * as THREE from "three/webgpu"
-import { noise, fbm } from "./shader-utils.jsm"
+import { noise, fbm, turbulenceFbm } from "./shader-utils.jsm"
 import { Pane } from "tweakpane"
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls"
 import Stats from "stats-gl"
@@ -16,7 +16,7 @@ class App {
         this.debugParams = {
             backgroundColor: 0x181818,
             landscape: {
-                remapLowerThreshold: -0.2,
+                remapLowerThreshold: 0.065,
                 color1: 0x181818,
                 color2: 0x8f89b2,
                 seed: 2,
@@ -64,14 +64,14 @@ class App {
         const fixedSeed = modelPosition.xyz.add(vec3(this.uLandscapeSeed))
         const animatedSeed = fixedSeed.add(time.mul(0.2))
         const noiseSeed = select(this.uLandscapeAnimate.equal(1), animatedSeed, fixedSeed)
-        const noiseValue = fbm(vec3(noiseSeed).mul(this.uLandscapeNoiseFrequencyFactor), this.uLandscapeHurstExponent, this.uLandscapeNumOctaves)
+        const noiseValue = turbulenceFbm(vec3(noiseSeed).mul(this.uLandscapeNoiseFrequencyFactor), this.uLandscapeHurstExponent, this.uLandscapeNumOctaves)
 
         const displacement = noiseValue.mul(this.uLandscapeNoiseScaleFactor)
         const displacedPosition = vec4(modelPosition.x, modelPosition.y.add(displacement), modelPosition.z, modelPosition.w)
-        const normalizedDisplacedPosition = remapClamp(displacedPosition.normalize(), this.uLandscapeRemapLowerThreshold, 1.0, 0.0, 1.0)
+        const heightDisplacement = remapClamp(displacedPosition.normalize().y, this.uLandscapeRemapLowerThreshold, 1.0, 0.0, 1.0)
         const viewPosition = cameraViewMatrix.mul(displacedPosition)
         const projectedPosition = cameraProjectionMatrix.mul(viewPosition)
-        const finalColor = mix(this.uLandscapeColor1, this.uLandscapeColor2, normalizedDisplacedPosition.y)
+        const finalColor = mix(this.uLandscapeColor1, this.uLandscapeColor2, heightDisplacement)
 
         const resolution = 128
         this.landscape = new THREE.Mesh(

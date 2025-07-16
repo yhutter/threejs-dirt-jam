@@ -1,4 +1,4 @@
-import { dot, mul, float, sub, fract, floor, Fn, sin, vec3, mix, exp2, Loop } from "three/tsl"
+import { dot, mul, float, sub, fract, floor, Fn, sin, vec3, mix, exp2, abs, Loop } from "three/tsl"
 
 // Most of the functions in here were transpiled from GLSL to TSL with: https://threejs.org/examples/?q=tsl#webgpu_tsl_transpiler
 
@@ -38,6 +38,23 @@ const fbm = /*@__PURE__*/ Fn(([x, H, numOctaves]) => {
 
 }, { x: 'vec3', H: 'float', numOctaves: 'int', return: 'float' });
 
+// Taken from https://thebookofshaders.com/13/
+const turbulenceFbm = /*@__PURE__*/ Fn(([x, H, numOctaves]) => {
+    const G = exp2(H.negate());
+    const f = float(1.0).toVar();
+    const a = float(1.0).toVar();
+    const t = float(0.0).toVar();
+
+    Loop({ start: 0, end: numOctaves }, () => {
+        t.addAssign(a.mul(abs(noise(f.mul(x)))));
+        f.mulAssign(2.0);
+        a.mulAssign(G);
+    });
+
+    return t;
+
+}, { x: 'vec3', H: 'float', numOctaves: 'int', return: 'float' });
 
 
-export { noise, fbm }
+
+export { noise, fbm, turbulenceFbm }

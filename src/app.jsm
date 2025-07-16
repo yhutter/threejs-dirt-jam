@@ -1,9 +1,12 @@
+"use strict"
+
 import * as THREE from "three/webgpu"
 import { noise, fbm } from "./shader-utils.jsm"
 import { Pane } from "tweakpane"
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls"
 import Stats from "stats-gl"
-import { time, vec3, vec4, uniform, select, modelWorldMatrix, positionGeometry, cameraViewMatrix, cameraProjectionMatrix, varying } from "three/tsl"
+import { time, vec3, vec4, uniform, select, modelWorldMatrix, positionGeometry, cameraViewMatrix, cameraProjectionMatrix, remapClamp, mix } from "three/tsl"
+
 
 class App {
 
@@ -11,9 +14,11 @@ class App {
         const canvas = document.getElementById(id)
 
         this.debugParams = {
-            backgroundColor: new THREE.Color(0x222222),
+            backgroundColor: 0x181818,
             landscape: {
-                color: new THREE.Color(0x7A8251),
+                remapLowerThreshold: -0.2,
+                color1: 0x181818,
+                color2: 0x8f89b2,
                 seed: 2,
                 noiseScaleFactor: 0.6,
                 noiseFrequencyFactor: 2.5,
@@ -23,6 +28,8 @@ class App {
                 animate: false,
             }
         }
+
+
 
         this.sizes = {
             width: window.innerWidth,
@@ -41,10 +48,12 @@ class App {
         this.camera.position.set(0, 1, 1.5)
 
         // Uniforms
-        this.uLandscapeColor = uniform(new THREE.Color(0x7A8251))
+        this.uLandscapeColor1 = uniform(new THREE.Color(this.debugParams.landscape.color1))
+        this.uLandscapeColor2 = uniform(new THREE.Color(this.debugParams.landscape.color2))
         this.uLandscapeSeed = uniform(this.debugParams.landscape.seed)
         this.uLandscapeNoiseScaleFactor = uniform(this.debugParams.landscape.noiseScaleFactor)
         this.uLandscapeNoiseFrequencyFactor = uniform(this.debugParams.landscape.noiseFrequencyFactor)
+        this.uLandscapeRemapLowerThreshold = uniform(this.debugParams.landscape.remapLowerThreshold)
         this.uLandscapeHurstExponent = uniform(this.debugParams.landscape.hurstExponent)
         this.uLandscapeNumOctaves = uniform(this.debugParams.landscape.numOctaves)
         this.uLandscapeAnimate = uniform(this.debugParams.landscape.animate ? 1 : 0)
@@ -59,9 +68,10 @@ class App {
 
         const displacement = noiseValue.mul(this.uLandscapeNoiseScaleFactor)
         const displacedPosition = vec4(modelPosition.x, modelPosition.y.add(displacement), modelPosition.z, modelPosition.w)
+        const normalizedDisplacedPosition = remapClamp(displacedPosition.normalize(), this.uLandscapeRemapLowerThreshold, 1.0, 0.0, 1.0)
         const viewPosition = cameraViewMatrix.mul(displacedPosition)
         const projectedPosition = cameraProjectionMatrix.mul(viewPosition)
-        const finalColor = this.uLandscapeColor
+        const finalColor = mix(this.uLandscapeColor1, this.uLandscapeColor2, normalizedDisplacedPosition.y)
 
         const resolution = 128
         this.landscape = new THREE.Mesh(
@@ -77,7 +87,7 @@ class App {
         this.camera.lookAt(this.landscape)
 
         this.scene.add(this.landscape)
-        this.renderer.setClearColor(this.debugParams.backgroundColor)
+        this.renderer.setClearColor(new THREE.Color(this.debugParams.backgroundColor))
 
         this.pane = new Pane()
         this.debugFolder = this.pane.addFolder({ title: "Dirt Jam", expanded: true })
@@ -104,8 +114,11 @@ class App {
         this.landscapeFolder.addBinding(this.debugParams.landscape, "wireframe", { label: "Wireframe" }).on("change", event => {
             this.landscape.material.wireframe = event.value
         })
-        this.landscapeFolder.addBinding(this.debugParams.landscape, "color", { label: "Color", view: "color", color: { type: "float" } }).on("change", event => {
-            this.uLandscapeColor.value.set(event.value)
+        this.landscapeFolder.addBinding(this.debugParams.landscape, "color1", { label: "Color1", view: "color", color: { type: "float" } }).on("change", event => {
+            this.uLandscapeColor1.value.set(event.value)
+        })
+        this.landscapeFolder.addBinding(this.debugParams.landscape, "color2", { label: "Color2", view: "color", color: { type: "float" } }).on("change", event => {
+            this.uLandscapeColor2.value.set(event.value)
         })
         this.landscapeFolder.addBinding(this.debugParams.landscape, "seed", { label: "Seed", min: 0, max: 100, step: 1 }).on("change", event => {
             this.uLandscapeSeed.value = event.value
@@ -121,6 +134,9 @@ class App {
         })
         this.landscapeFolder.addBinding(this.debugParams.landscape, "numOctaves", { label: "Num Octaves", min: 1, max: 10, step: 1 }).on("change", event => {
             this.uLandscapeNumOctaves.value = event.value
+        })
+        this.landscapeFolder.addBinding(this.debugParams.landscape, "remapLowerThreshold", { label: "Remap Lower Threshold", min: -1.0, max: 1.0, step: 0.001 }).on("change", event => {
+            this.uLandscapeRemapLowerThreshold.value = event.value
         })
         this.landscapeFolder.addBinding(this.debugParams.landscape, "animate", { label: "Animate" }).on("change", event => {
             this.uLandscapeAnimate.value = event.value ? 1 : 0

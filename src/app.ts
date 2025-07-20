@@ -8,7 +8,6 @@ import * as TSL from "three/tsl"
 type DebugParams = {
     backgroundColor: number,
     landscape: {
-        remapLowerThreshold: number,
         color1: number,
         color2: number,
         seed: number,
@@ -50,7 +49,6 @@ class App {
     uLandscapeSeed: Uniform<number>
     uLandscapeNoiseScaleFactor: Uniform<number>
     uLandscapeNoiseFrequencyFactor: Uniform<number>
-    uLandscapeRemapLowerThreshold: Uniform<number>
     uLandscapeHurstExponent: Uniform<number>
     uLandscapeNumOctaves: Uniform<number>
     // TODO: Uniforms of bools are not possible currently
@@ -61,7 +59,6 @@ class App {
         this.debugParams = {
             backgroundColor: 0x181818,
             landscape: {
-                remapLowerThreshold: 0.065,
                 color1: 0xce6561,
                 color2: 0xffffff,
                 seed: 2,
@@ -99,7 +96,6 @@ class App {
         this.uLandscapeSeed = TSL.uniform(this.debugParams.landscape.seed)
         this.uLandscapeNoiseScaleFactor = TSL.uniform(this.debugParams.landscape.noiseScaleFactor)
         this.uLandscapeNoiseFrequencyFactor = TSL.uniform(this.debugParams.landscape.noiseFrequencyFactor)
-        this.uLandscapeRemapLowerThreshold = TSL.uniform(this.debugParams.landscape.remapLowerThreshold)
         this.uLandscapeHurstExponent = TSL.uniform(this.debugParams.landscape.hurstExponent)
         this.uLandscapeNumOctaves = TSL.uniform(this.debugParams.landscape.numOctaves)
         this.uLandscapeAnimate = TSL.uniform(this.debugParams.landscape.animate ? 1 : 0)
@@ -109,21 +105,18 @@ class App {
         const fixedSeed = TSL.positionGeometry.xyz.add(TSL.vec3(this.uLandscapeSeed))
         const animatedSeed = fixedSeed.add(TSL.time.mul(0.2))
         const noiseSeed = TSL.select(this.uLandscapeAnimate.equal(1), animatedSeed, fixedSeed)
+
+        // Noise Value goes from 0 to 1
         const noiseValue = turbulence(TSL.vec3(noiseSeed).mul(this.uLandscapeNoiseFrequencyFactor), this.uLandscapeHurstExponent, this.uLandscapeNumOctaves)
 
-        const modelPosition = TSL.modelWorldMatrix.mul(TSL.vec4(TSL.positionGeometry, 1.0))
         const displacement = noiseValue.mul(this.uLandscapeNoiseScaleFactor)
-        const displacedPosition = TSL.vec4(modelPosition.x, modelPosition.y.add(displacement), modelPosition.z, modelPosition.w)
-        const heightDisplacement = TSL.remapClamp(displacedPosition.normalize().y, this.uLandscapeRemapLowerThreshold, 1.0, 0.0, 1.0)
-        const viewPosition = TSL.cameraViewMatrix.mul(displacedPosition)
-        const projectedPosition = TSL.cameraProjectionMatrix.mul(viewPosition)
-        const finalColor = TSL.mix(this.uLandscapeColor1, this.uLandscapeColor2, heightDisplacement)
+        const finalColor = TSL.mix(this.uLandscapeColor1, this.uLandscapeColor2, noiseValue)
 
         const resolution = 128
         this.landscapeMaterial = new THREE.MeshBasicNodeMaterial({
             wireframe: this.debugParams.landscape.wireframe,
-            vertexNode: projectedPosition,
-            fragmentNode: finalColor,
+            positionNode: TSL.positionLocal.add(TSL.vec3(0, 0, displacement)),
+            colorNode: finalColor,
         })
 
         this.landscape = new THREE.Mesh(
@@ -182,9 +175,6 @@ class App {
         })
         this.landscapeFolder.addBinding(this.debugParams.landscape, "numOctaves", { label: "Num Octaves", min: 1, max: 10, step: 1 }).on("change", event => {
             this.uLandscapeNumOctaves.value = event.value
-        })
-        this.landscapeFolder.addBinding(this.debugParams.landscape, "remapLowerThreshold", { label: "Remap Lower Threshold", min: -1.0, max: 1.0, step: 0.001 }).on("change", event => {
-            this.uLandscapeRemapLowerThreshold.value = event.value
         })
         this.landscapeFolder.addBinding(this.debugParams.landscape, "animate", { label: "Animate" }).on("change", event => {
             this.uLandscapeAnimate.value = event.value ? 1 : 0

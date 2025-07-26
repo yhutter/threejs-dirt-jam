@@ -1,33 +1,17 @@
-import * as THREE from "three/webgpu"
-import { Pane, FolderApi } from "tweakpane"
+import * as THREE from "three/build/three.webgpu"
+import { Pane } from "tweakpane"
 import { OrbitControls } from "three/examples/jsm/Addons.js"
 import Stats from "stats-gl"
 import { Landscape } from "./landscape"
 
-type AppDebugParams = {
-    backgroundColor: number,
-}
-
-type Size = {
-    width: number,
-    height: number
-}
-
 class App {
 
-    debugParams: AppDebugParams
-    size: Size
-    renderer: THREE.WebGPURenderer
-    scene: THREE.Scene
-    camera: THREE.PerspectiveCamera
-    controls: OrbitControls
-    pane: Pane
-    debugFolder: FolderApi
-    stats: Stats
-    clock: THREE.Clock
-    landscape: Landscape
-
-    constructor(id: string) {
+    /**
+        * Main Application which handles the basic game loop
+        * @param {string} canvasId - Id of main canvas element used for rendering 
+    */
+    constructor(canvasId) {
+        const canvas = document.getElementById(canvasId)
         this.debugParams = {
             backgroundColor: 0x181818,
         }
@@ -39,15 +23,12 @@ class App {
 
         this.renderer = new THREE.WebGPURenderer({
             antialias: true,
+            canvas: canvas
         })
-
         this.renderer.setSize(this.size.width, this.size.height)
         this.renderer.setPixelRatio(Math.min(2, window.devicePixelRatio))
-        this.renderer.domElement.id = id
-        document.body.appendChild(this.renderer.domElement)
 
         this.scene = new THREE.Scene()
-
         this.camera = new THREE.PerspectiveCamera(75, this.size.width / this.size.height, 0.01, 1000)
         this.camera.position.set(0, 1, 1.5)
 
@@ -66,7 +47,7 @@ class App {
 
         window.addEventListener("resize", () => this.resize())
 
-        this.landscape = new Landscape(128, this.scene, this.camera, this.pane)
+        this.landscape = new Landscape(this.scene, this.camera, this.pane)
     }
 
     async setup() {
@@ -97,7 +78,6 @@ class App {
     }
 
     tick() {
-        // const deltaTime = this.clock.getDelta() * 1000
         this.update()
         window.requestAnimationFrame(() => this.tick())
     }

@@ -69,16 +69,19 @@ class App {
         this.camera.updateProjectionMatrix()
     }
 
-    update() {
+    update(dt, elapsedTime) {
         this.stats.begin()
         this.controls.update()
+        this.landscape.update(dt, elapsedTime)
         this.renderer.render(this.scene, this.camera)
         this.stats.end()
         this.stats.update()
     }
 
     tick() {
-        this.update()
+        const dt = this.clock.getDelta() * 1000
+        const elapsed = this.clock.getElapsedTime()
+        this.update(dt, elapsed)
         window.requestAnimationFrame(() => this.tick())
     }
 

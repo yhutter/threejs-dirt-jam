@@ -1,7 +1,7 @@
 import * as THREE from "three/build/three.webgpu"
 import * as TSL from "three/build/three.tsl"
 import { Pane } from "tweakpane"
-import { turbulence } from "./shaders"
+import { turbulence, fbm } from "./shaders"
 
 class Landscape {
 
@@ -15,10 +15,10 @@ class Landscape {
         this.debugParams = {
             valleyColor: 0xebdbb2,
             peakColor: 0x1c2021,
-            seed: 2,
+            seed: 53,
             shift: 0.002,
-            noiseAmplitude: 0.6,
-            noiseFrequency: 2.5,
+            noiseAmplitude: 0.5,
+            noiseFrequency: 3.0,
             hurstExponent: 0.9,
             numOctaves: 4,
             wireframe: false,
@@ -27,18 +27,7 @@ class Landscape {
         this.camera = camera
         this.pane = pane
 
-        // Lights
-        this.light = new THREE.DirectionalLight(0xffffff, 1.0)
-        this.light.position.set(-1, 1, 0)
-        this.light.target.position.set(0, 0, 0)
-        this.scene.add(this.light.target)
-        this.scene.add(this.light)
-
-
-        const lightHelper = new THREE.DirectionalLightHelper(this.light)
-        this.scene.add(lightHelper)
-
-        this.landscapeMaterial = new THREE.MeshStandardNodeMaterial({
+        this.landscapeMaterial = new THREE.MeshBasicNodeMaterial({
             wireframe: this.debugParams.wireframe,
             side: THREE.DoubleSide
         })
@@ -67,14 +56,13 @@ class Landscape {
 
         const displacement = TSL.Fn(({ position }) => {
             const noiseSeed = position.xz.add(this.uSeed)
-            const noiseValue = turbulence(TSL.vec3(noiseSeed).mul(this.uNoiseFrequency), this.uHurstExponent, this.uNumOctaves)
+            const noiseValue = fbm(TSL.vec3(noiseSeed).mul(this.uNoiseFrequency), this.uHurstExponent, this.uNumOctaves)
             return noiseValue.mul(this.uNoiseAmplitude)
         })
 
         // Position
         const elevation = displacement({ position: TSL.positionLocal })
         const position = TSL.positionLocal.add(TSL.vec3(0, elevation, 0))
-        this.landscapeMaterial.positionNode = position
 
         // Calculate normals using neighbour technique
         let positionA = TSL.positionLocal.add(TSL.vec3(this.uShift, 0.0, 0.0))
@@ -85,10 +73,53 @@ class Landscape {
 
         const toA = positionA.sub(position).normalize()
         const toB = positionB.sub(position).normalize()
-        const normal = TSL.cross(toA, toB).normalize()
+        const calculatedNormal = TSL.cross(toA, toB).normalize()
 
-        this.landscapeMaterial.normalNode = TSL.transformNormalToView(normal)
-        this.landscapeMaterial.colorNode = TSL.mix(this.uValleyColor, this.uPeakColor, elevation)
+        const finalPosition = TSL.cameraProjectionMatrix.mul(TSL.cameraViewMatrix.mul(position))
+        const vPosition = finalPosition.toVertexStage()
+        const vNormal = TSL.modelWorldMatrix.mul(TSL.vec4(calculatedNormal, 0.0).xyz).toVertexStage()
+
+        // Lighting
+        const baseColor = TSL.vec3(0.5)
+        let lighting = TSL.vec3(0.0)
+        const normal = vNormal.normalize()
+        const viewDirection = TSL.cameraPosition.sub(vPosition.normalize())
+
+        // Hemi Lighting
+        const hemiMix = TSL.float(TSL.remap(normal.y, -1.0, 1.0, 0.0, 1.0))
+        const hemi = TSL.mix(this.uValleyColor, this.uPeakColor, hemiMix)
+
+        // Diffuse Lighting
+        const lightDirection = TSL.vec3(1.0, 1.0, 1.0).normalize()
+        const lightColor = TSL.vec3(1.0, 1.0, 0.9)
+        let dp = TSL.max(0.0, TSL.dot(lightDirection, normal))
+
+        // Toon
+        dp = dp.mul(TSL.smoothstep(0.5, 0.505, dp))
+
+        const diffuse = dp.mul(lightColor)
+        // const specular = TSL.vec3(0.0)
+
+        // Phong specular
+        const r = TSL.normalize(TSL.reflect(lightDirection.negate(), normal))
+        let phongValue = TSL.max(0.0, TSL.dot(viewDirection, r))
+        phongValue = TSL.pow(phongValue, 64)
+        let specular = TSL.vec3(phongValue)
+        specular = TSL.smoothstep(0.5, 0.51, specular)
+
+        // Fresnel
+        // let fresnel = TSL.float(1.0).sub(TSL.max(0.0, TSL.dot(viewDirection, normal)))
+        // fresnel = fresnel.pow(2.0)
+        // specular = specular.mul(fresnel)
+
+        // Lighting is sum of all light sources
+        lighting = hemi.mul(0.2).add(diffuse.mul(0.8))
+
+        // Calculate final color
+        const finalColor = baseColor.mul(lighting).add(specular)
+
+        this.landscapeMaterial.vertexNode = finalPosition
+        this.landscapeMaterial.fragmentNode = finalColor
 
         this.landscapeFolder = this.pane.addFolder({ title: "Landscape", expanded: true })
     }
@@ -121,6 +152,10 @@ class Landscape {
         this.landscapeFolder.addBinding(this.debugParams, "shift", { label: "Shift", min: 0, max: 5, step: 0.001 }).on("change", event => {
             this.uShift.value = event.value
         })
+    }
+
+    update(dt, elapsedTime) {
+        this.landscapeMesh.rotation.y = elapsedTime
     }
 }
 

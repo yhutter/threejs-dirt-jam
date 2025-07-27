@@ -13,7 +13,7 @@ class App {
     constructor(canvasId) {
         const canvas = document.getElementById(canvasId)
         this.debugParams = {
-            backgroundColor: 0x181818,
+            backgroundColor: 0x1c2021,
         }
 
         this.size = {

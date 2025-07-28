@@ -1,7 +1,7 @@
 import * as THREE from "three/build/three.webgpu"
 import * as TSL from "three/build/three.tsl"
 import { Pane } from "tweakpane"
-import { turbulence, fbm } from "./shaders"
+import { fbm } from "./shaders"
 
 class Landscape {
 
@@ -13,7 +13,7 @@ class Landscape {
     */
     constructor(scene, camera, pane) {
         this.debugParams = {
-            valleyColor: 0xebdbb2,
+            baseColor: 0xebdbb2,
             peakColor: 0x1c2021,
             seed: 53,
             shift: 0.002,
@@ -22,6 +22,7 @@ class Landscape {
             hurstExponent: 0.9,
             numOctaves: 4,
             wireframe: false,
+            lightColor: 0xffffff
         }
         this.scene = scene
         this.camera = camera
@@ -32,7 +33,7 @@ class Landscape {
             side: THREE.DoubleSide
         })
 
-        const resolution = 128
+        const resolution = 256
         this.landscapeGeometry = new THREE.PlaneGeometry(2, 2, resolution, resolution)
 
         this.landscapeMesh = new THREE.Mesh(
@@ -45,7 +46,8 @@ class Landscape {
         this.scene.add(this.landscapeMesh)
 
         // Uniforms
-        this.uValleyColor = TSL.uniform(new THREE.Color(this.debugParams.valleyColor))
+        this.uLightColor = TSL.uniform(new THREE.Color(this.debugParams.lightColor))
+        this.uBaseColor = TSL.uniform(new THREE.Color(this.debugParams.baseColor))
         this.uPeakColor = TSL.uniform(new THREE.Color(this.debugParams.peakColor))
         this.uSeed = TSL.uniform(this.debugParams.seed)
         this.uNoiseAmplitude = TSL.uniform(this.debugParams.noiseAmplitude)
@@ -75,45 +77,35 @@ class Landscape {
         const toB = positionB.sub(position).normalize()
         const calculatedNormal = TSL.cross(toA, toB).normalize()
 
-        const finalPosition = TSL.cameraProjectionMatrix.mul(TSL.cameraViewMatrix.mul(position))
+        const finalPosition = TSL.cameraProjectionMatrix.mul(TSL.modelViewMatrix.mul(position))
         const vPosition = finalPosition.toVertexStage()
         const vNormal = TSL.modelWorldMatrix.mul(TSL.vec4(calculatedNormal, 0.0).xyz).toVertexStage()
 
+        const baseColor = TSL.mix(this.uBaseColor, this.uPeakColor, TSL.smoothstep(0.0, 0.75, elevation))
+
         // Lighting
-        const baseColor = TSL.vec3(0.5)
         let lighting = TSL.vec3(0.0)
         const normal = vNormal.normalize()
         const viewDirection = TSL.cameraPosition.sub(vPosition.normalize())
 
-        // Hemi Lighting
-        const hemiMix = TSL.float(TSL.remap(normal.y, -1.0, 1.0, 0.0, 1.0))
-        const hemi = TSL.mix(this.uValleyColor, this.uPeakColor, hemiMix)
-
         // Diffuse Lighting
-        const lightDirection = TSL.vec3(1.0, 1.0, 1.0).normalize()
-        const lightColor = TSL.vec3(1.0, 1.0, 0.9)
+        const lightDirection = TSL.vec3(2.0, 1.0, 1.0).normalize()
         let dp = TSL.max(0.0, TSL.dot(lightDirection, normal))
 
         // Toon
         dp = dp.mul(TSL.smoothstep(0.5, 0.505, dp))
 
-        const diffuse = dp.mul(lightColor)
-        // const specular = TSL.vec3(0.0)
+        const diffuse = dp.mul(this.uLightColor)
 
         // Phong specular
         const r = TSL.normalize(TSL.reflect(lightDirection.negate(), normal))
         let phongValue = TSL.max(0.0, TSL.dot(viewDirection, r))
-        phongValue = TSL.pow(phongValue, 64)
+        phongValue = TSL.pow(phongValue, 32)
         let specular = TSL.vec3(phongValue)
         specular = TSL.smoothstep(0.5, 0.51, specular)
 
-        // Fresnel
-        // let fresnel = TSL.float(1.0).sub(TSL.max(0.0, TSL.dot(viewDirection, normal)))
-        // fresnel = fresnel.pow(2.0)
-        // specular = specular.mul(fresnel)
-
         // Lighting is sum of all light sources
-        lighting = hemi.mul(0.2).add(diffuse.mul(0.8))
+        lighting = diffuse
 
         // Calculate final color
         const finalColor = baseColor.mul(lighting).add(specular)
@@ -128,8 +120,11 @@ class Landscape {
         this.landscapeFolder.addBinding(this.debugParams, "wireframe", { label: "Wireframe" }).on("change", event => {
             this.landscapeMaterial.wireframe = event.value
         })
-        this.landscapeFolder.addBinding(this.debugParams, "valleyColor", { label: "Valley Color", view: "color", color: { type: "float" } }).on("change", event => {
-            this.uValleyColor.value.set(event.value)
+        this.landscapeFolder.addBinding(this.debugParams, "lightColor", { label: "Light Color", view: "color", color: { type: "float" } }).on("change", event => {
+            this.uLightColor.value.set(event.value)
+        })
+        this.landscapeFolder.addBinding(this.debugParams, "baseColor", { label: "Base Color", view: "color", color: { type: "float" } }).on("change", event => {
+            this.uBaseColor.value.set(event.value)
         })
         this.landscapeFolder.addBinding(this.debugParams, "peakColor", { label: "Peak Color", view: "color", color: { type: "float" } }).on("change", event => {
             this.uPeakColor.value.set(event.value)

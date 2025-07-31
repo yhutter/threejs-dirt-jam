@@ -3,7 +3,7 @@ import { Pane } from "tweakpane"
 import { OrbitControls } from "three/examples/jsm/Addons.js"
 import Stats from "stats-gl"
 import * as TSL from "three/build/three.tsl"
-import { fbm } from "./shaders"
+import { fbm, turbulence } from "./shaders"
 
 class App {
 
@@ -16,6 +16,14 @@ class App {
             backgroundColor: 0x0e0908,
             landscape: {
                 resolution: 256,
+                noiseFunction: 0,
+                noiseFunctionOptions: {
+                    "Fbm": 0,
+                    "Turbulence": 1
+                },
+                spin: true,
+                spinTime: 0,
+                spinSpeed: 0.2,
                 baseColor: 0xb9a38c,
                 peakColor: 0xa44932,
                 seed: 53,
@@ -87,10 +95,13 @@ class App {
         this.uHurstExponent = TSL.uniform(this.debugParams.landscape.hurstExponent)
         this.uNumOctaves = TSL.uniform(this.debugParams.landscape.numOctaves)
         this.uShift = TSL.uniform(this.debugParams.landscape.shift)
+        this.uNoiseFunction = TSL.uniform(this.debugParams.landscape.noiseFunction)
 
         const displacement = TSL.Fn(({ position }) => {
             const noiseSeed = position.xz.add(this.uSeed)
-            const noiseValue = fbm(TSL.vec3(noiseSeed).mul(this.uNoiseFrequency), this.uHurstExponent, this.uNumOctaves)
+            const fbmNoise = fbm(TSL.vec3(noiseSeed).mul(this.uNoiseFrequency), this.uHurstExponent, this.uNumOctaves)
+            const turbulenceNoise = turbulence(TSL.vec3(noiseSeed).mul(this.uNoiseFrequency), this.uHurstExponent, this.uNumOctaves)
+            const noiseValue = TSL.select(this.uNoiseFunction.equal(0), fbmNoise, turbulenceNoise)
             return noiseValue.mul(this.uNoiseAmplitude)
         })
 
@@ -184,6 +195,11 @@ class App {
         this.landscapeFolder.addBinding(this.debugParams.landscape, "shift", { label: "Shift", min: 0, max: 5, step: 0.001 }).on("change", event => {
             this.uShift.value = event.value
         })
+        this.landscapeFolder.addBinding(this.debugParams.landscape, "spin", { label: "Spin" })
+        this.landscapeFolder.addBinding(this.debugParams.landscape, "spinSpeed", { label: "Spin Speed", min: 0, max: 3, step: 0.1 })
+        this.landscapeFolder.addBinding(this.debugParams.landscape, "noiseFunction", { label: "Noise Function", options: this.debugParams.landscape.noiseFunctionOptions }).on("change", event => {
+            this.uNoiseFunction.value = this.debugParams.landscape.noiseFunction
+        })
     }
 
     async setup() {
@@ -201,17 +217,17 @@ class App {
         this.camera.updateProjectionMatrix()
     }
 
-    update(elapsedTime) {
+    tick() {
+        const dt = this.clock.getDelta()
         this.stats.begin()
         this.controls.update()
+        if (this.debugParams.landscape.spin) {
+            this.debugParams.landscape.spinTime += dt
+            this.landscapeMesh.rotation.y = this.debugParams.landscape.spinTime * this.debugParams.landscape.spinSpeed
+        }
         this.renderer.render(this.scene, this.camera)
         this.stats.end()
         this.stats.update()
-    }
-
-    tick() {
-        const elapsed = this.clock.getElapsedTime()
-        this.update(elapsed)
         window.requestAnimationFrame(() => this.tick())
     }
 

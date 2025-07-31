@@ -7,7 +7,7 @@
 </div>
 
 ## :sparkles: Show me what you got!
-Live Demo can be found [here]().
+Live Demo can be found [here](https://yhutter.github.io/threejs-dirt-jam).
 
 ## :sunrise_over_mountains: Why?
 For me this project was just about having fun and dipping my toes in procedural terrain generation. I also wanted an excuse to try out `TSL (Three Shading Language)`.

@@ -2,18 +2,31 @@ import * as THREE from "three/build/three.webgpu"
 import { Pane } from "tweakpane"
 import { OrbitControls } from "three/examples/jsm/Addons.js"
 import Stats from "stats-gl"
-import { Landscape } from "./landscape"
+import * as TSL from "three/build/three.tsl"
+import { fbm } from "./shaders"
 
 class App {
 
     /**
-        * Main Application which handles the basic game loop
         * @param {string} canvasId - Id of main canvas element used for rendering 
     */
     constructor(canvasId) {
         const canvas = document.getElementById(canvasId)
         this.debugParams = {
-            backgroundColor: 0x1c2021,
+            backgroundColor: 0x0e0908,
+            landscape: {
+                resolution: 256,
+                baseColor: 0xb9a38c,
+                peakColor: 0xa44932,
+                seed: 53,
+                shift: 0.002,
+                noiseAmplitude: 0.5,
+                noiseFrequency: 3.0,
+                hurstExponent: 0.9,
+                numOctaves: 4,
+                wireframe: false,
+                lightColor: 0xffffff
+            }
         }
 
         this.size = {
@@ -35,7 +48,6 @@ class App {
         this.renderer.setClearColor(new THREE.Color(this.debugParams.backgroundColor))
 
         this.pane = new Pane()
-        this.debugFolder = this.pane.addFolder({ title: "Dirt Jam", expanded: true })
 
         this.controls = new OrbitControls(this.camera, this.renderer.domElement)
         this.controls.enableDamping = true
@@ -47,17 +59,137 @@ class App {
 
         window.addEventListener("resize", () => this.resize())
 
-        this.landscape = new Landscape(this.scene, this.camera, this.pane)
+        // Setup landscape
+        this.landscapeMaterial = new THREE.MeshBasicNodeMaterial({
+            wireframe: this.debugParams.landscape.wireframe,
+        })
+
+        this.landscapeGeometry = new THREE.PlaneGeometry(2, 2, this.debugParams.landscape.resolution, this.debugParams.landscape.resolution)
+
+        this.landscapeMesh = new THREE.Mesh(
+            this.landscapeGeometry,
+            this.landscapeMaterial
+        )
+
+        this.landscapeGeometry.rotateX(-Math.PI * 0.5)
+        this.camera.lookAt(this.landscapeMesh.position)
+        this.scene.add(this.landscapeMesh)
     }
 
-    async setup() {
-        await this.renderer.init()
+    landscapeShader() {
+        // Uniforms
+        this.uLightColor = TSL.uniform(new THREE.Color(this.debugParams.landscape.lightColor))
+        this.uBaseColor = TSL.uniform(new THREE.Color(this.debugParams.landscape.baseColor))
+        this.uPeakColor = TSL.uniform(new THREE.Color(this.debugParams.landscape.peakColor))
+        this.uSeed = TSL.uniform(this.debugParams.landscape.seed)
+        this.uNoiseAmplitude = TSL.uniform(this.debugParams.landscape.noiseAmplitude)
+        this.uNoiseFrequency = TSL.uniform(this.debugParams.landscape.noiseFrequency)
+        this.uHurstExponent = TSL.uniform(this.debugParams.landscape.hurstExponent)
+        this.uNumOctaves = TSL.uniform(this.debugParams.landscape.numOctaves)
+        this.uShift = TSL.uniform(this.debugParams.landscape.shift)
+
+        const displacement = TSL.Fn(({ position }) => {
+            const noiseSeed = position.xz.add(this.uSeed)
+            const noiseValue = fbm(TSL.vec3(noiseSeed).mul(this.uNoiseFrequency), this.uHurstExponent, this.uNumOctaves)
+            return noiseValue.mul(this.uNoiseAmplitude)
+        })
+
+        // Position
+        const elevation = displacement({ position: TSL.positionLocal })
+        const position = TSL.positionLocal.add(TSL.vec3(0, elevation, 0))
+
+        // Calculate normals using neighbour technique
+        let positionA = TSL.positionLocal.add(TSL.vec3(this.uShift, 0.0, 0.0))
+        let positionB = TSL.positionLocal.add(TSL.vec3(0.0, 0.0, this.uShift.negate()))
+
+        positionA = positionA.add(TSL.vec3(0.0, displacement({ position: positionA }), 0.0))
+        positionB = positionB.add(TSL.vec3(0.0, displacement({ position: positionB }), 0.0))
+
+        const toA = positionA.sub(position).normalize()
+        const toB = positionB.sub(position).normalize()
+        const calculatedNormal = TSL.cross(toA, toB).normalize()
+
+        const finalPosition = TSL.cameraProjectionMatrix.mul(TSL.modelViewMatrix.mul(position))
+        const vPosition = finalPosition.toVertexStage()
+        const vNormal = TSL.modelWorldMatrix.mul(TSL.vec4(calculatedNormal, 0.0).xyz).toVertexStage()
+
+        const baseColor = TSL.mix(this.uBaseColor, this.uPeakColor, TSL.smoothstep(0.0, 0.25, elevation))
+
+        // Lighting
+        let lighting = TSL.vec3(0.0)
+        const normal = vNormal.normalize()
+        const viewDirection = TSL.cameraPosition.sub(vPosition.normalize())
+
+        // Diffuse Lighting
+        const lightDirection = TSL.vec3(2.0, 1.0, 1.0).normalize()
+        let dp = TSL.max(0.0, TSL.dot(lightDirection, normal))
+
+        // Toon
+        dp = dp.mul(TSL.smoothstep(0.5, 0.505, dp))
+
+        const diffuse = dp.mul(this.uLightColor)
+
+        // Phong specular
+        const r = TSL.normalize(TSL.reflect(lightDirection.negate(), normal))
+        let phongValue = TSL.max(0.0, TSL.dot(viewDirection, r))
+        phongValue = TSL.pow(phongValue, 32)
+        let specular = TSL.vec3(phongValue)
+        specular = TSL.smoothstep(0.5, 0.52, specular)
+
+        // Lighting is sum of all light sources
+        lighting = diffuse
+
+        // Calculate final color
+        const finalColor = baseColor.mul(lighting).add(specular)
+
+        this.landscapeMaterial.vertexNode = finalPosition
+        this.landscapeMaterial.fragmentNode = finalColor
+    }
+
+    addTweaks() {
+        this.debugFolder = this.pane.addFolder({ title: "Dirt Jam", expanded: true })
+        this.landscapeFolder = this.pane.addFolder({ title: "Landscape", expanded: true })
 
         this.debugFolder.addBinding(this.debugParams, "backgroundColor", { label: "Background Color", view: "color", color: { type: "float" } }).on("change", event => {
             this.renderer.setClearColor(event.value)
         })
 
-        this.landscape.setup()
+        this.landscapeFolder.addBinding(this.debugParams.landscape, "wireframe", { label: "Wireframe" }).on("change", event => {
+            this.landscapeMaterial.wireframe = event.value
+        })
+        this.landscapeFolder.addBinding(this.debugParams.landscape, "lightColor", { label: "Light Color", view: "color", color: { type: "float" } }).on("change", event => {
+            this.uLightColor.value.set(event.value)
+        })
+        this.landscapeFolder.addBinding(this.debugParams.landscape, "baseColor", { label: "Base Color", view: "color", color: { type: "float" } }).on("change", event => {
+            this.uBaseColor.value.set(event.value)
+        })
+        this.landscapeFolder.addBinding(this.debugParams.landscape, "peakColor", { label: "Peak Color", view: "color", color: { type: "float" } }).on("change", event => {
+            this.uPeakColor.value.set(event.value)
+        })
+        this.landscapeFolder.addBinding(this.debugParams.landscape, "seed", { label: "Seed", min: 0, max: 100, step: 1 }).on("change", event => {
+            this.uSeed.value = event.value
+        })
+        this.landscapeFolder.addBinding(this.debugParams.landscape, "noiseAmplitude", { label: "Noise Amplitude", min: 0, max: 3, step: 0.01 }).on("change", event => {
+            this.uNoiseAmplitude.value = event.value
+        })
+        this.landscapeFolder.addBinding(this.debugParams.landscape, "noiseFrequency", { label: "Noise Frequency", min: 0, max: 3, step: 0.1 }).on("change", event => {
+            this.uNoiseFrequency.value = event.value
+        })
+        this.landscapeFolder.addBinding(this.debugParams.landscape, "hurstExponent", { label: "Hurst Exponent", min: 0, max: 1, step: 0.1 }).on("change", event => {
+            this.uHurstExponent.value = event.value
+        })
+        this.landscapeFolder.addBinding(this.debugParams.landscape, "numOctaves", { label: "Num Octaves", min: 1, max: 10, step: 1 }).on("change", event => {
+            this.uNumOctaves.value = event.value
+        })
+        this.landscapeFolder.addBinding(this.debugParams.landscape, "shift", { label: "Shift", min: 0, max: 5, step: 0.001 }).on("change", event => {
+            this.uShift.value = event.value
+        })
+    }
+
+    async setup() {
+        await this.renderer.init()
+        this.addTweaks()
+        this.landscapeShader()
     }
 
     resize() {
@@ -69,19 +201,17 @@ class App {
         this.camera.updateProjectionMatrix()
     }
 
-    update(dt, elapsedTime) {
+    update(elapsedTime) {
         this.stats.begin()
         this.controls.update()
-        this.landscape.update(dt, elapsedTime)
         this.renderer.render(this.scene, this.camera)
         this.stats.end()
         this.stats.update()
     }
 
     tick() {
-        const dt = this.clock.getDelta() * 1000
         const elapsed = this.clock.getElapsedTime()
-        this.update(dt, elapsed)
+        this.update(elapsed)
         window.requestAnimationFrame(() => this.tick())
     }
 

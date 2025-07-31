@@ -14,8 +14,9 @@ class App {
         const canvas = document.getElementById(canvasId)
         this.debugParams = {
             backgroundColor: 0x0e0908,
+            showStats: false,
             landscape: {
-                resolution: 256,
+                resolution: 512,
                 noiseFunction: 0,
                 noiseFunctionOptions: {
                     "Fbm": 0,
@@ -60,7 +61,20 @@ class App {
         this.controls = new OrbitControls(this.camera, this.renderer.domElement)
         this.controls.enableDamping = true
 
-        this.stats = new Stats()
+        this.stats = new Stats({
+            trackGPU: true,
+            trackHz: true,
+            trackCPT: false,
+            logsPerSecond: 4,
+            graphsPerSecond: 30,
+            samplesLog: 40,
+            samplesGraph: 10,
+            precision: 2,
+            horizontal: true,
+            minimal: false,
+            mode: 0
+        })
+        this.stats.dom.hidden = !this.debugParams.showStats
         document.body.appendChild(this.stats.dom)
 
         this.clock = new THREE.Clock()
@@ -163,6 +177,9 @@ class App {
 
         this.debugFolder.addBinding(this.debugParams, "backgroundColor", { label: "Background Color", view: "color", color: { type: "float" } }).on("change", event => {
             this.renderer.setClearColor(event.value)
+        })
+        this.debugFolder.addBinding(this.debugParams, "showStats", { label: "Show Stats" }).on("change", event => {
+            this.stats.dom.hidden = !event.value
         })
 
         this.landscapeFolder.addBinding(this.debugParams.landscape, "wireframe", { label: "Wireframe" }).on("change", event => {

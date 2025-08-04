@@ -13,7 +13,7 @@ class App {
     constructor(canvasId) {
         const canvas = document.getElementById(canvasId)
         this.debugParams = {
-            backgroundColor: 0x2e3440,
+            backgroundColor: 0x0A0A0A,
             showStats: false,
             landscape: {
                 resolution: 512,
@@ -25,8 +25,8 @@ class App {
                 spin: true,
                 spinTime: 0,
                 spinSpeed: 0.2,
-                baseColor: 0x81a1c1,
-                peakColor: 0xd8dee9,
+                baseColor: 0x0A0A0A,
+                peakColor: 0x64B2DB,
                 seed: 53,
                 shift: 0.002,
                 noiseAmplitude: 0.5,
